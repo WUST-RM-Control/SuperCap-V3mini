@@ -2,7 +2,9 @@
 
 基于 **STM32G474RETx** 的 RoboMaster 超级电容（能量缓冲）控制板固件。板卡以 **HRTIM 驱动的四开关 Buck-Boost** 为核心，实时采样底盘侧与电容侧的电压/电流，通过多环 PID 计算目标充放电功率并换算为 Buck-Boost 变压比，从而在底盘功率受限时用超级电容"削峰填谷"，把裁判系统功率压在允许范围内。
 
-> 本仓库为 **Mini 版**（`SuperCapV3 - Mini`），采用"电池缓冲（Battery Buffer）"工作模式：固定从底盘侧取约 100 W 给电容充电/放电，不依赖 CAN/UART 控制帧即可独立运行。
+> 本仓库为 **Mini 版**（`SuperCapV3 - Mini`），当前固件工作在 **受控模式（Controlled Mode）**：使能、允许功率、缓冲能量均由上位机（主控/裁判系统桥接板）通过 CAN `0x30` 或 UART 控制帧下发，超电按帧指令做功率补偿，并每 100 ms 回传 `0x31` 反馈帧。
+>
+> 代码中保留了编译期开关 `IF_USED_AS_BAT_BUFFER`：置 `0` 为受控模式（当前），置 `1` 退化为"电池缓冲（Battery Buffer）"模式——固定从底盘侧取 100 W，无需任何控制帧即可独立运行，适合单板离线测试。
 
 ---
 
@@ -10,7 +12,7 @@
 
 - [1. 主要特性](#1-主要特性)
 - [2. 硬件平台](#2-硬件平台)
-- [3. 引脚与外设分配](#3-引脚与外设分配)s
+- [3. 引脚与外设分配](#3-引脚与外设分配)
 - [4. 目录结构](#4-目录结构)
 - [5. 系统架构与数据流](#5-系统架构与数据流)
 - [6. 控制原理](#6-控制原理)
@@ -33,7 +35,8 @@
 | 功率拓扑 | 双半桥四开关 Buck-Boost（A 侧 / B 侧各一个半桥） |
 | PWM | HRTIM1，开关频率 **340 kHz**，硬件死区，ADC 触发与 PWM 同步 |
 | 采样 | 5 路运放跟随 + 5 路 ADC，DMA 循环搬运，12 bit |
-| 控制 | 5 个位置式 PID（功率外环 / 电容电压上下限 / 功率内环 / 缓冲能量） |
+| 控制 | 5 个增量式 PID（功率外环 / 电容电压上下限 / 功率内环 / 缓冲能量） |
+| 工作模式 | **受控模式**（CAN/UART 控制帧生效）；编译期可切电池缓冲模式 |
 | 保护 | 底盘掉电、过压、过流（预留）、通信超时、故障恢复与自复位 |
 | 通信 | FDCAN2（1 Mbps，0x30/0x31）、USART2（115200，8 字节帧） |
 | 人机接口 | SSD1306 OLED（I2C1，128×64）+ RGB 状态灯 |
@@ -124,7 +127,7 @@ SuperCapV3 - Mini/
 │   ├── ADC_Driver.c/.h         # ADC 原始值 → 工程量换算、功率计算
 │   ├── ADC_Adjust.c/.h         # 按芯片 UID 的板级校准系数表
 │   ├── PWM_Driver.c/.h         # 变比 → 占空比，HRTIM 比较值写入
-│   ├── PID.c/.h                # 位置式 PID（含积分限幅、微分项）
+│   ├── PID.c/.h                # 增量式 PID（输出累加 + 输出限幅，Kp/Ki/Kd）
 │   ├── CAN_Driver.c/.h         # FDCAN 收发与过滤器
 │   ├── USART_Driver.c/.h       # 串口接收空闲中断、printf 重定向
 │   ├── LED.c/.h                # RGB 灯语
@@ -171,7 +174,7 @@ flowchart LR
     ERR --> HRTIM
     ERR --> LED[RGB 灯]
     CAP --> OLED[OLED 10 Hz]
-    CTRL --> CAN[CAN 0x31 反馈<br/>仅非 buffer 模式]
+    CTRL --> CAN[CAN 0x31 反馈<br/>100 Hz]
 ```
 
 **分层**
@@ -189,7 +192,9 @@ flowchart LR
 
 ### 6.1 目标
 
-让底盘功率不超过裁判系统允许值：当底盘瞬时功率超过上限时，由超级电容补足差额；功率回落时再给电容回充。当前 **buffer 模式**下，目标恒定从 A 侧取 `Bat_Buffer_P = 100 W` 用于给电容补能/吸收，相当于把电容当作"电池缓冲池"。
+让底盘功率不超过裁判系统允许值：当底盘瞬时功率超过上限时，由超级电容补足差额；功率回落时再给电容回充。
+
+当前为 **受控模式**：允许功率 `Max_Referee_P` 与使能 `Enable_Flag` 由上位机下发。控制器把 `CapData.Referee_P`（裁判系统功率）跟踪到 `Max_Referee_P − PowerBuffer_PID.Output`：功率超限时让电容放电补差，功率富余时让电容回充，同时用缓冲能量环把电容可用能量维持在 `Power_Buff_Target_Energy = 55`。
 
 ### 6.2 控制链（`Cap_Calulate_VB_to_VA`）
 
@@ -214,12 +219,12 @@ flowchart LR
                                         ⇒ 限幅 [0.2, 5.0]
 ```
 
-- **功率外环** `Referee_P_PID`：目标功率与实测裁判功率之差，输出应补偿的功率。
-- **缓冲能量环** `PowerBuffer_PID`（仅在非 buffer 模式生效）：把剩余能量拉回 `Power_Buff_Target_Energy`，输出用于修正目标功率。
+- **功率外环** `Referee_P_PID`：目标功率（`Max_Referee_P` 扣除缓冲能量环输出）与实测裁判功率之差，输出应补偿的功率。
+- **缓冲能量环** `PowerBuffer_PID`（受控模式生效，每收到一帧控制数据计算一次）：把回传的剩余能量拉回 `Power_Buff_Target_Energy = 55`，输出限制在 ±10，用于在能量充裕时少取电、能量不足时多取电；电容电压达到 25.5 V 时输出清零。
 - **电压限幅环** `Cap_Vmax/Vmin_PID`：电容电压接近 25.5 V 时压低充电功率，接近 8 V 时限制放电功率，二者与功率环输出取"最保守值"。
 - **功率内环** `CAP_P_PID`：把目标功率转换为电压修正量 `ΔV`，叠加到电容电压上再除以 A 侧电压，得到变比。
 - **低电量处理**：`B_Power_V < 6 V` 置 `Cap_Empty_Flag`，强制以 **30 W** 恒功率预充电，回到 `> 9 V` 后退出。
-- **电流/功率上限**：`A_P_Max = min(MAX_B_Current × B_Power_V, MAX_Power)`，并写入三个外环的 `Output_Max`。
+- **电流/功率上限**：`A_P_Max = min(MAX_B_Current × B_Power_V, MAX_Power)`（受控模式 `MAX_B_Current = 14 A`），并写入三个外环的 `Output_Max`。
 
 ### 6.3 变比 → 占空比（`Buck_Boost_Control`）
 
@@ -235,15 +240,17 @@ flowchart LR
 
 | 故障 | 判据 | 动作 | 灯语 |
 | --- | --- | --- | --- |
-| 软件关断 | `Enable_Flag == 0` | 关 PWM | 绿灯慢闪 |
-| 底盘离线 | `A_Power_V ≤ 14 V` | 关 PWM，`Connect_Error_Flag=1` | 蓝灯慢闪 |
+| 软件关断 | `Enable_Flag == 0`（控制帧未使能 / 通信超时） | 关 PWM | 绿灯慢闪 |
+| 底盘离线 | `A_Power_V ≤ 19 V` | 关 PWM，`Connect_Error_Flag=1` | 蓝灯慢闪 |
 | 过压 | `A_Power_V ≥ 32 V` 或 `B_Power_V ≥ 27 V` | 关 PWM，`V_Error_Flag=1` | 红灯常亮 |
 | 过流 | 预留（已注释） | — | — |
 | 正常运行 | 无故障且 `Enable_Flag=1` | 开 PWM，所有 PID 输出清零（仅首次） | RGB 同步 1 Hz 闪烁 |
 
-恢复采用**带 1 V 回差**的判据（如 `A_Power_V ≤ 31 V` 才清过压标志），避免在阈值附近反复开关。
+恢复采用**带 1 V 回差**的判据（如 `A_Power_V ≥ 20 V` 才清底盘离线标志、`A_Power_V ≤ 31 V && B_Power_V ≤ 26 V` 才清过压标志），避免在阈值附近反复开关。
 
-主循环每 100 ms 递增 `Communicate_Cooldown`，超过 50 次（500 ms 无控制帧）即清 `Enable_Flag`；`Enable_Flag` 持续为 0 达 1 s 时执行 `NVIC_SystemReset()`（buffer 模式下不会触发）。
+通信看门狗：100 Hz 任务每 10 ms 递增 `Communicate_Cooldown`，收到合法控制帧（CAN `0x30` 或 UART `0x55AA` 尾标）即清零；累计到 50（**500 ms 无有效帧**）就清 `Enable_Flag` 关断输出。
+
+自复位：`Enable_Flag` 持续为 0 达 1 s 时执行 `NVIC_SystemReset()`。受控模式下这是**正常行为**——上位机不在线时，板子会以约 1 s 的周期反复复位（表现为 RGB 灯/OLED 周期性闪烁），接上控制帧即停止。
 
 ---
 
@@ -253,16 +260,16 @@ flowchart LR
 
 | 宏 | 值 | 含义 |
 | --- | --- | --- |
-| `IF_USED_AS_BAT_BUFFER` | **1** | 1 = 电池缓冲模式（当前）；0 = 受控模式（CAN/UART 帧生效） |
+| `IF_USED_AS_BAT_BUFFER` | **0** | 0 = 受控模式（**当前**，CAN/UART 帧生效）；1 = 电池缓冲模式 |
 | `Safe_RefMax_V` | 32.0 V | 底盘侧过压保护阈值 |
 | `Safe_CupMax_V` | 27.0 V | 电容侧过压保护阈值 |
 | `CAP_MAX_V` | 25.5 V | 电容充电上限（闭环） |
 | `CAP_MIN_V` | 8.0 V | 电容放电下限（闭环） |
 | `Power_Buff_Target_Energy` | 55 | 期望缓冲能量（受控模式） |
-| `MAX_B_Current` | 20.0 A | 电容最大充放电电流（buffer 模式） |
+| `MAX_B_Current` | 14.0 A | 电容最大充放电电流（受控模式；buffer 模式为 20 A） |
 | `MAX_Power` | 360.0 W | 电容最大充放电功率 |
-| `Chassis_Offline_V` | 14.0 V | 底盘离线判据（buffer 模式） |
-| `Bat_Buffer_P` | 100.0 W | buffer 模式恒定取用功率 |
+| `Chassis_Offline_V` | 19.0 V | 底盘离线判据（受控模式；buffer 模式为 14 V） |
+| `Bat_Buffer_P` | 100.0 W | 仅 buffer 模式定义并使用的恒定取用功率 |
 
 PID 参数（`Cap_Init`）：
 
@@ -297,6 +304,8 @@ HAL_Init → SystemClock_Config(170 MHz)
         → 自检 65 次 ADC_Update() + Cap_ErrorHandle()
         → I2C 探测 OLED（写 0x00,0xAF）→ IF_OLED_Online
         → while(1) 主控制循环
+             · 上电后 Enable_Flag = 0，PWM 保持关闭，等待首个控制帧
+             · 1 s 内收不到有效控制帧 → NVIC_SystemReset() 重新启动
 ```
 
 ### 8.2 任务划分
@@ -305,7 +314,7 @@ HAL_Init → SystemClock_Config(170 MHz)
 | --- | --- | --- |
 | 自由运行（约数十 kHz） | `main` 循环 | `ADC_Update()` → `Cap_Calulate_VB_to_VA()` → `Buck_Boost_Control()`，并用 DWT 统计 `Main_Hz` |
 | 1 kHz | TIM7 中断 | `Cap_ErrorHandle()`（保护、开关输出、灯语） |
-| 100 Hz | TIM7 分频 | `Cap_Send_FeedBack_Data()`、通信超时计数 |
+| 100 Hz | TIM7 分频 | `Cap_Send_FeedBack_Data()`（发 `0x31` 反馈帧）、通信超时计数 |
 | 10 Hz | TIM7 分频 | `LED_Flash_100ms_Loop()`、OLED 刷新 |
 | 1 Hz | TIM7 分频 | 关闭状态下自复位 |
 
@@ -345,12 +354,20 @@ uint16_t Chassis_P_x10;       // 底盘功率 ×10（负值截 0）
 
 ### 9.3 当前模式下的行为
 
-`IF_USED_AS_BAT_BUFFER == 1` 时：
+`IF_USED_AS_BAT_BUFFER == 0`（受控模式，**当前**）时：
 
-- `Cap_Unpack_Control_Data()` 与 `Cap_Send_FeedBack_Data()` 的**函数体被 `#if` 编译掉**，CAN/UART 控制帧不生效；
-- 每轮控制强制 `Enable_Flag = 1`、`Max_Referee_P = 100 W`、`Power_Buff_Energy = 55`，并清零通信超时计数。
+- `Cap_Unpack_Control_Data()` 与 `Cap_Send_FeedBack_Data()` **正常编译**：CAN `0x30` / UART 帧生效，`0x31` 反馈帧每 100 ms 发出一次；
+- 上电 `Enable_Flag = 0`、`Max_Referee_P = 20 W`、`Power_Buff_Energy = 55`（`Cap_Init` 中的初值），PWM 关闭；收到**首个**带 `Enable_Flag = 1` 的控制帧后才开始输出；
+- 每收到一帧即计算一次 `PowerBuffer_PID`（`Target = 55`），用于修正目标功率；`B_Power_V ≥ 25.5 V` 时其输出强制清零；
+- 500 ms 未收到有效帧 → 清 `Enable_Flag` 关 PWM；再持续 1 s → 芯片复位。因此**上位机必须保持 ≥ 2 Hz 的连续发帧**，否则板子会自行关断并复位。
 
-若要切回受控模式，把该宏改为 `0` 即可（无需改其他代码）。
+`IF_USED_AS_BAT_BUFFER == 1`（电池缓冲模式）时：
+
+- 上述两个函数的**函数体被 `#if` 编译掉**，CAN/UART 控制帧不生效，`0x31` 反馈帧也不发送；
+- 每轮控制强制 `Enable_Flag = 1`、`Max_Referee_P = 100 W`（`Bat_Buffer_P`）、`Power_Buff_Energy = 55`，并清零通信超时计数，因此不会触发超时关断与自复位；
+- 底盘离线阈值降为 14 V、电容电流上限放宽到 20 A。
+
+两种模式只需改 `SuperCap_Control.c` 顶部这一个宏，其余代码无需改动。
 
 ---
 
@@ -454,7 +471,7 @@ B/A = +x.xxx   A0.xxx  B0.xxx
 | --- | --- | --- |
 | A 桥上下管 | PA8 / PA9 | 340 kHz 互补，带死区 |
 | B 桥上下管 | PA10 / PA11 | 同上，占空比随变比变化 |
-| CAN | PB6 | 100 Hz 反馈帧（受控模式） |
+| CAN | PB6 | 100 Hz 反馈帧 `0x31`，同时可观测上位机下发的 `0x30` |
 | 串口 | PB3 | 调试打印 |
 
 ---
@@ -478,6 +495,7 @@ B/A = +x.xxx   A0.xxx  B0.xxx
 | 声明未实现 | `ADC_Update_Tempture()`、`ADC_Filter()` 只在头文件声明 | 实现或删除声明 |
 | 类型与语义不符 | `Power_Buff_Energy`、`Max_Referee_P` 为 `uint8_t`，却被赋 `55`、`100.0f` 这类能量/功率值 | 改为 `uint32_t`/`float` 或明确量纲 |
 | 通信无校验 | CAN/UART 帧无 CRC，仅 UART 有 `0x55AA` 尾标 | 增加校验字节或序号 |
+| 看门狗变量类型不一致 | `main.c` 定义为 `uint16_t Communicate_Cooldown`，`CAN_Driver.c` 却声明为 `extern uint8_t`（`USART_Driver.c`、`SuperCap_Control.c` 用的是 `uint16_t`） | 统一为 `uint16_t` 并放进公共头文件，避免不同翻译单元解释长度不同 |
 | 主循环周期不定 | 控制频率依赖代码执行时间（OLED 刷屏时抖动） | 关键控制放到固定频率定时器中断或做时基补偿 |
 
 ---
@@ -486,10 +504,27 @@ B/A = +x.xxx   A0.xxx  B0.xxx
 
 ### 14.1 切换工作模式
 
+模式由 `SuperCap_Control.c` 第 3 行的宏唯一决定（当前为 **受控模式**）：
+
 ```c
-/* SuperCap_Control.c */
-#define IF_USED_AS_BAT_BUFFER 0   // 0 = 受控模式（CAN/UART 帧生效，反馈帧使能）
+/* SuperCap_Control.c:3 */
+#define IF_USED_AS_BAT_BUFFER 0     // 0 = 受控模式（当前，CAN/UART 帧生效 + 0x31 反馈）
+                                    // 改成 1 = 电池缓冲模式（100 W 恒功率，无需上位机）
 ```
+
+切换后**必须重新编译烧录**，并同步检查各模式私有宏：
+
+| 宏 | 受控模式（0） | 缓冲模式（1） |
+| --- | --- | --- |
+| `MAX_B_Current` | 14 A | 20 A |
+| `Chassis_Offline_V` | 19 V | 14 V |
+| `Bat_Buffer_P` | 不定义 | 100 W |
+
+台架联调建议：
+
+1. **先切缓冲模式**给电容预充电、验证采样与保护（无需上位机，板子不会复位）；
+2. 接上主控后再切回受控模式，用 USB-CAN 以 100 Hz 发 `0x30` 帧，确认 `0x31` 有回传且 `TargetP` 跟随；
+3. 受控模式下若停发帧，500 ms 后 PWM 关闭、1 s 后芯片复位，这是预期行为，不是故障。
 
 ### 14.2 调整功率上限 / 保护阈值
 

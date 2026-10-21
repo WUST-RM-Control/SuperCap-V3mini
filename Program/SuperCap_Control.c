@@ -1,6 +1,6 @@
 #include "SuperCap_Control.h"
 
-#define IF_USED_AS_BAT_BUFFER 1     //是否作为电池补偿电容
+#define IF_USED_AS_BAT_BUFFER 0     //是否作为电池补偿电容（0 = 受控模式，1 = 电池缓冲模式）
 
 #define Safe_RefMax_V 32.0f       //底盘安全电压上限
 #define Safe_CupMax_V 27.0f       //电容安全电压上限
