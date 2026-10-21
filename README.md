@@ -415,6 +415,14 @@ Chassis_P = Referee_P − A_Power_P
 - 器件包：`Keil.STM32G4xx_DFP`
 - 编译器：ARM Compiler 5/6，C99
 
+本机已验证的工具链（其他机器请按实际路径替换）：
+
+| 项 | 值 |
+| --- | --- |
+| uVision | `E:\Embeded\Keil_v5\UV4\UV4.exe`（5.42.0.0） |
+| 编译器 | ARMCLANG V6.23（`E:\Embeded\Keil_v5\ARM\ARMCLANG\Bin`） |
+| 构建耗时 | 约 7 s |
+
 ### 11.2 工程配置
 
 | 项 | 值 |
@@ -435,6 +443,26 @@ Chassis_P = Referee_P − A_Power_P
 ### 11.4 修改外设配置
 
 外设改动请通过 `SuperCapV3.ioc` 在 CubeMX 中重新生成，**只修改 `USER CODE BEGIN/END` 之间的内容**，`Program/` 不受重新生成影响。
+
+### 11.5 命令行编译（无 GUI / 脚本化）
+
+`UV4.exe` 是 GUI 子系统程序，PowerShell 用 `&` 调用不会等待，必须 `Start-Process -Wait`：
+
+```powershell
+Start-Process -FilePath 'E:\Embeded\Keil_v5\UV4\UV4.exe' `
+  -ArgumentList '-b','MDK-ARM\SuperCapV3.uvprojx','-j0','-o','build_check.log' `
+  -Wait -PassThru | Select-Object ExitCode
+```
+
+日志写在工程目录 `MDK-ARM\build_check.log`（`*.log` 已在 `.gitignore` 中），成功标志：
+
+```
+Program Size: Code=38828 RO-data=2736 RW-data=20 ZI-data=4756
+"SuperCapV3\SuperCapV3.axf" - 0 Error(s), 0 Warning(s).
+```
+
+> 上面这组体积数据是受控模式（`IF_USED_AS_BAT_BUFFER = 0`）的基线，Code 大幅漂移时先确认没有误改 `#if(IF_USED_AS_BAT_BUFFER)` 分支。
+> 烧录同理：把 `-b` 换成 `-f` 即可。
 
 ---
 
