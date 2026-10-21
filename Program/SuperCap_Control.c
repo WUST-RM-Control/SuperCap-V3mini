@@ -1,6 +1,6 @@
 #include "SuperCap_Control.h"
 
-#define IF_USED_AS_BAT_BUFFER 0     //是否作为电池补偿电容
+#define IF_USED_AS_BAT_BUFFER 1     //是否作为电池补偿电容
 
 #define Safe_RefMax_V 32.0f       //底盘安全电压上限
 #define Safe_CupMax_V 27.0f       //电容安全电压上限
@@ -10,10 +10,13 @@
 
 #if(IF_USED_AS_BAT_BUFFER)
     #define MAX_B_Current 20.0f   //电容最大充放电电流
-    #define MAX_Power 450.0f       //电容最大充放电功率
+    #define MAX_Power 360.0f       //电容最大充放电功率
+    #define Chassis_Offline_V 14.0f //底盘离线电压
+    #define Bat_Buffer_P 100.0f     //期望电池功率
 #else
     #define MAX_B_Current 14.0f   //电容最大充放电电流
     #define MAX_Power 360.0f       //电容最大充放电功率
+    #define Chassis_Offline_V 19.0f //底盘离线电压
 #endif
 
 CapData_StructTypedef CapData = {0};
@@ -36,9 +39,9 @@ void Cap_Init(void)
     USART_Init();
     
     PID_Init(&PowerBuffer_PID_Struct,   0.0f,   0.005f,   0.0f,     10.0f);
-    PID_Init(&Referee_P_PID_Struct,     4.0f,   0.05f,    0.0f,     MAX_Power);
-    PID_Init(&Cap_Vmax_PID_Struct,      0.0f,   0.05f,     0.0f,     MAX_Power);
-    PID_Init(&Cap_Vmin_PID_Struct,      0.0f,   0.05f,     0.0f,     MAX_Power);
+    PID_Init(&Referee_P_PID_Struct,     1.0f,   0.03f,    0.0f,     MAX_Power);
+    PID_Init(&Cap_Vmax_PID_Struct,      0.0f,   0.03f,     0.0f,     MAX_Power);
+    PID_Init(&Cap_Vmin_PID_Struct,      0.0f,   0.03f,     0.0f,     MAX_Power);
     PID_Init(&CAP_P_PID_Struct,         0.001f, 0.0001f,  0.0f,     23.0f);
    
     
@@ -64,13 +67,13 @@ CCMRAM void Cap_ErrorHandle(void)
         }
     
     /*===| 底盘断电 |===*/
-        if(CapData.A_Power_V <= 19.0f)
+        if(CapData.A_Power_V <= Chassis_Offline_V)
         {
             HRTIM_Output_Stop();
             CapControl.Connect_Error_Flag = 1; 
             LED_Set(B, Flash);
         }
-        else if(CapData.A_Power_V >= 20.0f)
+        else if(CapData.A_Power_V >= Chassis_Offline_V+1)
         {
             CapControl.Connect_Error_Flag = 0; 
             if(LED_B_Flash_Flag == 1) LED_Set(B, OFF);
@@ -137,12 +140,14 @@ CCMRAM void Cap_ErrorHandle(void)
         }
 }
 
+extern uint16_t Communicate_Cooldown;
 CCMRAM void Cap_Calulate_VB_to_VA(void)
 {
 #if(IF_USED_AS_BAT_BUFFER)
-    CapControl.Max_Referee_P = 200.0f;
+    CapControl.Max_Referee_P = Bat_Buffer_P;
     CapControl.Enable_Flag = 1;
-    Capcontrol.Power_Buff_Energy = Power_Buff_Target_Energy;
+    Communicate_Cooldown = 0;
+    CapControl.Power_Buff_Energy = Power_Buff_Target_Energy;
 #endif
 
     /*===| 计算充放电功率 |===*/
@@ -202,6 +207,7 @@ CCMRAM void Cap_Calulate_VB_to_VA(void)
     if(CapControl.VB_to_VA_Set > 5.0f) CapControl.VB_to_VA_Set = 5.0f;
     if(CapControl.VB_to_VA_Set < 0.2f) CapControl.VB_to_VA_Set = 0.2f;
 }
+
 
 SuperCap_Control_Data_StructTypedef SuperCap_Control_Data;
 CCMRAM void Cap_Unpack_Control_Data(uint8_t *Data)

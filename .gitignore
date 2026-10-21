@@ -17,7 +17,6 @@ Listings/
 *.crf
 *.dep
 *.lnp
-*.sct
 *.iex
 *.axf
 *.elf
