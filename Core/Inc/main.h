@@ -45,17 +45,22 @@ extern "C" {
 #include "arm_math.h"
 #include "stdio.h"
 
-#include "PWM_Driver.h"
-#include "SuperCap_Control.h"
-#include "ADC_Driver.h"
-#include "SuperCap_Control.h"
+/* ---- App 层（替代原 Program/） ---- */
+#include "params.h"
+#include "app_main.h"
+#include "sample.h"
+#include "modulator.h"
+#include "ctrl_core.h"
+#include "ctrl_isr.h"
+#include "protect.h"
+#include "comm_can.h"
+#include "comm_uart.h"
+#include "ui_oled.h"
+#include "calib.h"
 #include "OLED.h"
 #include "LED.h"
-#include "PID.h"
-#include "CAN_Driver.h"
-#include "USART_Driver.h"
-#include "ADC_Adjust.h"
 #include "DWT.h"
+
 #define  CCMRAM __attribute__((section("ccmram")))
 /* USER CODE END Includes */
 
