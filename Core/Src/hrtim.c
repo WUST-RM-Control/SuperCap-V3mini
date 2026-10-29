@@ -52,7 +52,11 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_HRTIM_DLLCalibrationStart(&hhrtim1, HRTIM_CALIBRATIONRATE_3) != HAL_OK)
+  /* 只在上电校准一次。CubeMX 默认给的是 HRTIM_CALIBRATIONRATE_3 =
+     2048 x tHRTIM ≈ 12 us（83 kHz）周期校准，等于整机一直在重校准：每次校准
+     都会扰动高分辨率边沿 -> 占空比抖动 -> 电感电流周期性脉动。
+     下面紧跟的 PollForDLLCalibration 已经把这一次校准等完了。 */
+  if (HAL_HRTIM_DLLCalibrationStart(&hhrtim1, HRTIM_SINGLE_CALIBRATION) != HAL_OK)
   {
     Error_Handler();
   }
@@ -171,12 +175,12 @@ void MX_HRTIM1_Init(void)
   {
     Error_Handler();
   }
-  pDeadTimeCfg.Prescaler = HRTIM_TIMDEADTIME_PRESCALERRATIO_DIV8;
-  pDeadTimeCfg.RisingValue = 1;
+  pDeadTimeCfg.Prescaler = HRTIM_TIMDEADTIME_PRESCALERRATIO_MUL4;
+  pDeadTimeCfg.RisingValue = 10;
   pDeadTimeCfg.RisingSign = HRTIM_TIMDEADTIME_RISINGSIGN_POSITIVE;
   pDeadTimeCfg.RisingLock = HRTIM_TIMDEADTIME_RISINGLOCK_WRITE;
   pDeadTimeCfg.RisingSignLock = HRTIM_TIMDEADTIME_RISINGSIGNLOCK_WRITE;
-  pDeadTimeCfg.FallingValue = 1;
+  pDeadTimeCfg.FallingValue = 10;
   pDeadTimeCfg.FallingSign = HRTIM_TIMDEADTIME_FALLINGSIGN_POSITIVE;
   pDeadTimeCfg.FallingLock = HRTIM_TIMDEADTIME_FALLINGLOCK_WRITE;
   pDeadTimeCfg.FallingSignLock = HRTIM_TIMDEADTIME_FALLINGSIGNLOCK_WRITE;
@@ -305,3 +309,4 @@ void HAL_HRTIM_MspDeInit(HRTIM_HandleTypeDef* hrtimHandle)
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
+

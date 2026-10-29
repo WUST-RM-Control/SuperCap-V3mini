@@ -341,7 +341,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32G474xx,ARM_MATH_CM4,ARM_MATH_CM4,__FPU_USED=1U,__FPU_PRESENT=1U</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32G4xx/Include;../Drivers/CMSIS/Include;../Program</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc;../Drivers/STM32G4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32G4xx/Include;../Drivers/CMSIS/Include;../App</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -372,7 +372,7 @@
             <TextAddressRange></TextAddressRange>
             <DataAddressRange></DataAddressRange>
             <pXoBase></pXoBase>
-            <ScatterFile>.\SuperCapV3\SuperCapV3.sct</ScatterFile>
+            <ScatterFile>stm32g474xx_flash.sct</ScatterFile>
             <IncludeLibs></IncludeLibs>
             <IncludeLibsPath></IncludeLibsPath>
             <Misc></Misc>
@@ -509,62 +509,87 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>Project</GroupName>
+          <GroupName>App</GroupName>
           <Files>
             <File>
-              <FileName>ADC_Adjust.c</FileName>
+              <FileName>app_main.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\ADC_Adjust.c</FilePath>
+              <FilePath>..\App\app_main.c</FilePath>
             </File>
             <File>
-              <FileName>ADC_Driver.c</FileName>
+              <FileName>ctrl_core.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\ADC_Driver.c</FilePath>
+              <FilePath>..\App\ctrl_core.c</FilePath>
             </File>
             <File>
-              <FileName>CAN_Driver.c</FileName>
+              <FileName>ctrl_isr.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\CAN_Driver.c</FilePath>
+              <FilePath>..\App\ctrl_isr.c</FilePath>
             </File>
             <File>
-              <FileName>LED.c</FileName>
+              <FileName>modulator.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\LED.c</FilePath>
+              <FilePath>..\App\modulator.c</FilePath>
+            </File>
+            <File>
+              <FileName>sample.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\sample.c</FilePath>
+            </File>
+            <File>
+              <FileName>protect.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\protect.c</FilePath>
+            </File>
+            <File>
+              <FileName>comm_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\comm_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>comm_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\comm_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>ui_oled.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\ui_oled.c</FilePath>
+            </File>
+            <File>
+              <FileName>calib.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\calib.c</FilePath>
             </File>
             <File>
               <FileName>OLED.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\OLED.c</FilePath>
+              <FilePath>..\App\OLED.c</FilePath>
             </File>
             <File>
               <FileName>OLED_Data.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\OLED_Data.c</FilePath>
+              <FilePath>..\App\OLED_Data.c</FilePath>
             </File>
             <File>
-              <FileName>PID.c</FileName>
+              <FileName>LED.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\PID.c</FilePath>
-            </File>
-            <File>
-              <FileName>PWM_Driver.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Program\PWM_Driver.c</FilePath>
-            </File>
-            <File>
-              <FileName>SuperCap_Control.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Program\SuperCap_Control.c</FilePath>
-            </File>
-            <File>
-              <FileName>USART_Driver.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Program\USART_Driver.c</FilePath>
+              <FilePath>..\App\LED.c</FilePath>
             </File>
             <File>
               <FileName>DWT.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Program\DWT.c</FilePath>
+              <FilePath>..\App\DWT.c</FilePath>
+            </File>
+            <File>
+              <FileName>i2c_guard.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\i2c_guard.c</FilePath>
+            </File>
+            <File>
+              <FileName>debug.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\debug.c</FilePath>
             </File>
           </Files>
         </Group>

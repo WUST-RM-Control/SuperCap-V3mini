@@ -30,7 +30,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "SuperCap_Control.h"
+/* App 层的头文件统一由 main.h 引入 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,7 +51,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint16_t Communicate_Cooldown;
+/* 应用层状态全部在 App/ 内维护 */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,97 +62,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint32_t DWT_Counter;
-float Main_Dt;
-float Main_Hz;
-
-uint8_t IF_OLED_Online;
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-//    if(htim == &htim6) //50kHz
-//    {
-//        /*===| ADC数据更新处理 |===*/
-//        ADC_Update();
-
-//        /*===| 计算变压比 |===*/
-//        Cap_Calulate_VB_to_VA();
-
-//        /*===| 设置变压比 |===*/
-//        Buck_Boost_Control(CapControl.VB_to_VA_Set);
-//    }
-    if(htim == &htim7) //1kHz
-    {
-        static uint16_t Ticker_1000ms, Ticker_100ms, Ticker_10ms;
-        Ticker_1000ms++; Ticker_100ms++, Ticker_10ms++;
-  
-        /*===| 1kHz |===*/
-        { 
-            /*===| 错误判断与处理 |===*/
-            Cap_ErrorHandle();
-            
-        }
-        
-        /*===| 100Hz |===*/
-        if(Ticker_10ms >= 10)                                      
-        {
-            /*===| 发送反馈帧 |===*/
-            Cap_Send_FeedBack_Data();
-//            printf("%.2f,%.2f\n",CapData.B_Power_V, CapData.Referee_P);
-            
-            /*===| 如果通信中断500ms，则关闭输出 |===*/
-            Communicate_Cooldown++;
-            if(Communicate_Cooldown >= 50)
-            {
-                CapControl.Enable_Flag = 0;
-                Communicate_Cooldown = 50;
-            }
-            
-            Ticker_10ms = 0;
-        }
-        
-        /*===| 10Hz |===*/
-        if(Ticker_100ms >= 100)
-        {
-            /*===| 控制LED状态 |===*/
-            LED_Flash_100ms_Loop();
-            
-             /*===| OLED显示数据 |===*/
-            if(IF_OLED_Online)
-            {
-                OLED_Printf(0,0*8,OLED_6X8,"RefereeP =%+06.2f   ", CapData.Referee_P);
-                OLED_Printf(0,1*8,OLED_6X8,"TargetP =%+06.2f   ", CapControl.Target_A_P);
-                
-                OLED_Printf(0,2*8,OLED_6X8,"AV =%+05.2f   ", CapData.A_Power_V);
-                OLED_Printf(0,3*8,OLED_6X8,"AI =%+05.2f   ", CapData.A_Power_I);
-                OLED_Printf(0,4*8,OLED_6X8,"AP =%+05.1f   ", CapData.A_Power_P);
-                OLED_Printf(64,2*8,OLED_6X8,"BV =%+05.2f   ", CapData.B_Power_V);
-                OLED_Printf(64,3*8,OLED_6X8,"BI =%+05.2f   ", CapData.B_Power_I);
-                OLED_Printf(64,4*8,OLED_6X8,"BP =%+05.1f   ", CapData.B_Power_P);
-                OLED_Printf(0,5*8,OLED_6X8,"mainFre%+06.1fHz ", Main_Hz); 
-                OLED_Printf(0,6*8,OLED_6X8,"B/A=%+04.3f            ", CapControl.VB_to_VA_Set); 
-                OLED_Printf(0,6*9,OLED_6X8,"A%+04.3f", CapControl.A_Duty);
-                OLED_Printf(64,6*9,OLED_6X8,"B%+04.3f", CapControl.B_Duty);
-
-                OLED_Update();
-            }    
-             
-            Ticker_100ms = 0;
-        }
-        
-        if(Ticker_1000ms >= 1000) //1Hz
-        {
-           
-            
-            Ticker_1000ms = 0;
-            
-            if(CapControl.Enable_Flag == 0)
-                HAL_NVIC_SystemReset();
-        }
-    }
-}
-
-
 /* USER CODE END 0 */
 
 /**
@@ -207,39 +116,12 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  /*===| 模块初始化 |===*/
-    DWT_Init(170);
-    Cap_Init();
+    HAL_Delay(100);
+    App_Init();
 
-  /*===| 自检 |===*/
-  for(uint8_t i = 0; i <= 64; i++)
-  {
-    /*===| ADC数据更新处理 |===*/
-    ADC_Update();
-
-    /*===| 错误判断与处理 |===*/
-    Cap_ErrorHandle();
-  }
-  
-  uint8_t Data[2] = {0x00, 0xAF};
-  if(HAL_I2C_Master_Transmit(&hi2c1, 0x78, Data, 2, 1) == HAL_OK) IF_OLED_Online = 1;
-  else IF_OLED_Online = 0;
-  
-    
-    
-  while (1)
-  {
-      Main_Dt = DWT_GetDeltaT(&DWT_Counter);
-      Main_Hz = 1.0f/Main_Dt;
-    
-    /*===| ADC数据更新处理 |===*/
-    ADC_Update();
-
-    /*===| 计算变压比 |===*/
-    Cap_Calulate_VB_to_VA();
-
-    /*===| 设置变压比 |===*/
-    Buck_Boost_Control(CapControl.VB_to_VA_Set);
+    while (1)
+    {
+        App_Loop();
     
     /* USER CODE END WHILE */
 
