@@ -31,7 +31,7 @@
 | 采样 | 2 路电压（11:1）+ 3 路电流（4 mΩ + INA240A1×20），16 点块平均 |
 | 电容组 | 8–25.5 V 工作区（调节点 25.5 V），26.0 V 超压保护，26.5 V 物理极限 |
 | 电容电流 | ≤ **15 A**（RM 规则，充放对称） |
-| 通信 | FDCAN2（1 Mbps）+ USART2（115200），帧格式与旧固件逐字节一致 |
+| 通信 | FDCAN2（1 Mbps）+ USART2（**1 Mbaud**，控制帧与调试 CSV 共用），帧格式与旧固件逐字节一致 |
 | I2C1 | **400 kHz** 标准快速模式（`0x20824349`，实测 399 kHz），SSD1306 规格内 |
 | 人机 | SSD1306 OLED（I2C1）+ RGB 灯语 |
 
@@ -196,15 +196,21 @@ Start-Process -FilePath 'E:\Embeded\Keil_v5\UV4\UV4.exe' `
 
 ### 7.1 串口工程量（`CFG_DEBUG_UART = 1`，默认开）
 
-USART2 115200，**10 Hz** 一行 CSV：
+USART2 **1000000 8N1**，**10 Hz** 一帧 **VOFA+ JustFloat**（二进制，DMA 发送）：
+`N 个 float（小端）+ 帧尾 00 00 80 7F`。上位机 VOFA+ 选 JustFloat 即可自动出波形。
 
-```
-VA,VB,IRef,IA,ICha,IB,IL,PRef,PA,PB,PCha,PTgt,DA,DB,u,VL,uVA,St,Fl,Lim
-```
+| 通道 | 含义 |
+| --- | --- |
+| CH0 | `P_Tgt` 缓冲环功率目标 (W) |
+| CH1 | `P_Ref_Avg` 电管功率 1 ms 块平均 (W)，稳态抖动看这列 |
+| CH2 | `P_Ref` 电管功率瞬时 47 µs 块平均 (W)，瞬态看这列 |
+| CH3 | `P_Cha_Avg` 底盘功率 1 ms 块平均 (W) |
+| CH4 | `I_L_Avg` 电感电流 1 ms 块平均 (A) |
+| CH5 | `V_B` 电容侧电压 (V) |
 
-- `St`：状态机（0=INIT 1=IDLE 2=SOFT_START 3=RUN 4=FAULT）
-- `Fl`：故障位（hex，见 `protect.h` 的 `FLT_*`）
-- `Lim`：软件限流压制中（1 = 当前电流超 15 A，占空比正被压制）
+- 通道数由 `App/debug.c` 的 `DEBUG_JF_MAX_CH`（`debug.h`）决定，最大帧 = `N*4+4` 字节；
+- 发送是**非阻塞 DMA 单槽**：上一帧没发完就丢帧（`Debug_SendJustFloat()` 返回 0），主循环不会卡；
+- `printf` 重定向（`comm_uart.c`）保留，同样走 DMA 行缓冲，但**不能与 JustFloat 同时用**（文本会插进二进制帧）。
 
 > 上车前把 `CFG_DEBUG_UART` 改成 0。
 

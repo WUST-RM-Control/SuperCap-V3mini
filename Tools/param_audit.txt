@@ -10,10 +10,10 @@ A4    PASS  hw_ov 解锁点低于 OVP 释放点                    V_OV_UNLOCK=2
 A5    PASS  过流阈值低于 INA240 正摆幅 worst case           OC=16.5A < 16.9A（typ 18.1A，ADC 满量程 20.6A）
 A6    PASS  电容电流限与过流阈值有 ≥9% 余量                     I_B_MAX=15.0A x1.09=16.35 <= OC=16.5A
 A7    PASS  u 限幅小于调制器过渡区裕量                         U_LIM=0.080，r=1 时裕量 = DH = 0.100
-A8    PASS  r=1 处共同占空比不至于过低                        c(1) = 0.850
-A9    PASS  I_L_MAX 覆盖 15A 电容电流对应的电感电流             V_B=25.5V 时 D_B=0.8735 -> I_L=17.17A < I_L_MAX=18.0A
-A10   PASS  Kp/Ki 与文档推导一致（CUR_FC=600Hz）            Kp=1.5708e-03 (文档 1.571e-3), Ki=1.184 (文档 1.184)
-A11   PASS  电流环带宽不超过延时预算                           Td=70.6us -> fc_max=1377Hz, 取 600Hz
+A8    PASS  r=1 处共同占空比不至于过低                        c(1) = 0.820
+A9    PASS  I_L_MAX 覆盖 15A 电容电流对应的电感电流             V_B=25.5V 时 D_B=0.8453 -> I_L=17.75A < I_L_MAX=18.0A
+A10   PASS  CUR_FC 落在实测可用区间                        CUR_FC=750Hz -> Kp=1.9635e-03 Ki=1.851 ；台架实测：600 干净；早先 750/900 的突发经查是 DMAX=0.95 自举充不满所致，已修
+A11   PASS  电流环带宽不超过延时预算                           Td=70.6us -> fc_max=1377Hz, 取 750Hz
 A12   PASS  缓冲能量阈值递增                               0 ≤ 10 < 55 < 60
 A13   PASS  P_OVER 取值合理                            P_OVER=5.0 W（协议 Max_Referee_P 为 uint8，0-255W）
 A14   PASS  P_REV_MAX 覆盖 1A 泄放功率                   泄放 26.5W < P_REV_MAX 40.0W
@@ -27,6 +27,7 @@ A21   PASS  I2C1 时序：.ioc 与 i2c.c 一致                .ioc=0x20824349  
 A22   PASS  I2C 400kHz 快速模式时序合规                    f_SCL=399 kHz, t_LOW=1.306 us(>=1.3), t_SU;DAT=159 ns(>=100), PRESC=2 SCLDEL=8 SDADEL=2 SCLH=67 SCLL=73
 A23   PASS  HRTIM 死区 10 计数 x MUL4(1.472ns)=14.7ns，.ioc/代码一致 .ioc 计数=['10'] 预分频=['MUL4'] | hrtim.c Rise=10 Fall=10 预分频=MUL4
 A24   PASS  HRTIM DLL 只在上电校准一次（周期校准会抖动占空比）         hrtim.c 传入 = HRTIM_SINGLE_CALIBRATION
+A25   PASS  调试上报带宽够用                               1000 Hz x 60 B = 60.0 kB/s ；链路 1000000 baud = 100.0 kB/s（占 60%）
 ------------------------------------------------------------------------------------------------
-共 24 项，通过 24，失败 0
+共 25 项，通过 25，失败 0
 

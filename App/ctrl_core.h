@@ -49,6 +49,7 @@ typedef struct
     uint8_t  Regen;                /* 动能回收中 */
     uint8_t  Ov;                   /* 26.0V 超压：禁充 + 1A 泄放 */
     uint8_t  HwOv;                 /* 26.5V 物理极限：锁存 */
+    uint8_t  IbSat;                /* 上一拍电容电流指令被限幅（Trim 抗饱和用） */
 } Ctrl_t;
 
 extern Ctrl_t Ctrl;

@@ -179,7 +179,7 @@ static void Ctrl_LED_Update(void)
   */
 void Ctrl_Tick_1ms(void)
 {
-    static uint16_t T_10ms, T_100ms;
+    static uint16_t T_10ms, T_100ms, T_dbg;
     static uint16_t CoolMs;      /* 故障消失后的冷却计时，防止跳闸-重启无限循环 */
     static uint8_t  EnLast;
 
@@ -268,6 +268,16 @@ void Ctrl_Tick_1ms(void)
         }
 
         Comm_Can_Send_Feedback();
+    }
+
+    /* ---- 调试上报（CFG_DEBUG_PERIOD_MS，默认 1 = 1 kHz）----
+       独立分频，不再挂在 100Hz 上。数据在本次中断里锁存（debug.c 双缓冲），
+       主循环只负责把锁存好的那帧送出去，所以时间戳严格等于控制节拍，不受
+       主循环抖动影响。 */
+    T_dbg++;
+    if (T_dbg >= (uint16_t)CFG_DEBUG_PERIOD_MS)
+    {
+        T_dbg = 0;
         Debug_Request();
     }
 

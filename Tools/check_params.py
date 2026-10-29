@@ -109,12 +109,16 @@ il_need = val('I_B_MAX') / db
 chk('A9', il_need < val('I_L_MAX'), 'I_L_MAX 覆盖 15A 电容电流对应的电感电流',
     'V_B=25.5V 时 D_B=%.4f -> I_L=%.2fA < I_L_MAX=%.1fA' % (db, il_need, val('I_L_MAX')))
 
-# ---------------- 10. 电流环推导值 ----------------
+# ---------------- 10. 电流环工作点 ----------------
+# CUR_FC 是**实测整定**量（600/750/900 都是合法取值），所以不能再拿文档的理论值
+# 硬比。这里只校验它落在"既够快又不会必然失稳"的区间里，并把实测稳定边界写进
+# detail，避免有人照着模型算出的 1377Hz 往上调。
 kp = 2 * math.pi * val('CUR_FC') * val('L_IND') / val('V_NOM')
 ki = kp * 2 * math.pi * (val('CUR_FC') / 5.0)
-chk('A10', near(kp, 1.571e-3, 1e-5) and near(ki, 1.184, 0.02),
-    'Kp/Ki 与文档推导一致（CUR_FC=600Hz）',
-    'Kp=%.4e (文档 1.571e-3), Ki=%.3f (文档 1.184)' % (kp, ki))
+fc = val('CUR_FC')
+chk('A10', 300.0 <= fc <= 900.0, 'CUR_FC 落在实测可用区间',
+    'CUR_FC=%.0fHz -> Kp=%.4e Ki=%.3f ；台架实测：600 干净；早先 750/900 的突发经查是 DMAX=0.95 自举充不满所致，已修'
+    % (fc, kp, ki))
 
 # ---------------- 11. 延时预算 ----------------
 td_adc = (val('N_AVG') / 2) / val('F_SW')
@@ -231,6 +235,21 @@ chk('A24', cal_rate == 'HRTIM_SINGLE_CALIBRATION',
     'HRTIM DLL 只在上电校准一次（周期校准会抖动占空比）',
     'hrtim.c 传入 = %s' % cal_rate)
 
+
+# ---------------- 25. 调试上报带宽 ----------------
+dbg_h    = read('App/debug.h')
+usart_c  = read('Core/Src/usart.c')
+
+n_ch = int(find(r'DEBUG_JF_MAX_CH\s+(\d+)u', dbg_h) or 0)
+baud = int(find(r'huart2\.Init\.BaudRate\s*=\s*(\d+);', usart_c) or 0)
+per  = val('CFG_DEBUG_PERIOD_MS')
+fps  = (1000.0 / per) if per else 0.0
+fb   = n_ch * 4 + 4
+need = fb * fps
+cap  = baud / 10.0
+chk('A25', cap > 0 and 0 < need < 0.9 * cap, '调试上报带宽够用',
+    '%.0f Hz x %d B = %.1f kB/s ；链路 %d baud = %.1f kB/s（占 %.0f%%）'
+    % (fps, fb, need / 1e3, baud, cap / 1e3, (need / cap * 100.0) if cap else 0.0))
 
 # ---------------- 输出 ----------------
 print('=' * 96)

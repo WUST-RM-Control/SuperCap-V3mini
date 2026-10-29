@@ -133,18 +133,40 @@ void Ctrl_Step(float Ts)
         Ctrl.Soft = 0.0f;
     }
 
-    /* ---------- 3. 功率环：死拍前馈 + 慢积分修正 ---------- */
+    /* ---------- 3. 功率环：死拍前馈 + 比例修正 + 慢积分修正 ---------- */
     {
-        float p_a_ref = (Ctrl.P_Tgt - Ctrl.P_Cha_f) + Ctrl.Trim;
+        /* 前馈部分：P_A_ref = P_Tgt − P_Cha_f，负载扰动一步抵消。
+           比例项 KP_PWR*(P_Tgt-P_Ref_f)：把功率从"开环映射"变成真正的闭环，
+           否则任何模型残差只能等 5Hz 的 Trim 慢慢磨（实测 τ≈26ms 的尾巴）。
+           默认 KP_PWR=0 即与旧行为完全一致。 */
+        float p_a_ref = (Ctrl.P_Tgt - Ctrl.P_Cha_f)
+                        + KP_PWR * (Ctrl.P_Tgt - Ctrl.P_Ref_f)
+                        + Ctrl.Trim;
 
         /* 倒灌限幅：P_Ref = P_Cha + P_A >= -P_REV_MAX（用瞬时 P_Cha） */
         float lim_low = -(Smp.P_Cha + P_REV_MAX);
         if (p_a_ref < lim_low) { p_a_ref = lim_low; }
 
-        /* 修正积分：只补损耗/标定残差；软启动期间禁止（否则会上电冲高预充电流） */
-        if (Ctrl.Soft >= 1.0f && Ctrl.State == ST_RUN)
+        /* 修正积分：只补损耗/标定残差；软启动期间禁止（否则会上电冲高预充电流）。
+           两道保护：
+           1) 速率限幅（TRIM_SLEW_W_S）：阶跃瞬间几十瓦的误差是**瞬态**，不该被
+              当成稳态误差积分——实测这是 +8W 过冲和 26ms 恢复尾巴的唯一来源。
+              小误差时速率远低于限幅，稳态行为不变。
+           2) 抗饱和（Ctrl.IbSat，上一拍由电压管理置位）：电容电压低/限流生效时，
+              功率误差根本修不掉，若还积分就会撞到 ±TRIM_MAX。实测撞到 -15W 后
+              负载一撤，光退饱和就要 113ms（受 1) 的速率限制），表现为一次
+              "恢复失败"。饱和期间冻结，条件消失后从原值继续。 */
+        if (Ctrl.Soft >= 1.0f && Ctrl.State == ST_RUN
+            && !Ctrl.IbSat && !Ctrl.Ov && !Ctrl.HwOv
+            && (CFG_CUR_STEP_TEST == 0))
         {
-            Ctrl.Trim += KI_PWR * (Ctrl.P_Tgt - Ctrl.P_Ref_f) * Ts;
+            float d_trim = KI_PWR * (Ctrl.P_Tgt - Ctrl.P_Ref_f) * Ts;
+            float lim    = TRIM_SLEW_W_S * Ts;
+
+            if (d_trim >  lim) { d_trim =  lim; }
+            if (d_trim < -lim) { d_trim = -lim; }
+
+            Ctrl.Trim += d_trim;
             Ctrl.Trim  = CLAMP(Ctrl.Trim, -TRIM_MAX, TRIM_MAX);
         }
 
@@ -181,7 +203,22 @@ void Ctrl_Step(float Ts)
                 i_b_ref  = -I_DUMP;
             }
 
-            i_b_ref = CLAMP(i_b_ref, -lim, lim);
+            /* 限幅同时记录"是否被限"：被限说明这份功率差分根本给不出来，
+               Trim 必须在下一拍停止积分（抗饱和），否则会积到 ±TRIM_MAX。 */
+            if (i_b_ref > lim)
+            {
+                i_b_ref     = lim;
+                Ctrl.IbSat  = 1;
+            }
+            else if (i_b_ref < -lim)
+            {
+                i_b_ref     = -lim;
+                Ctrl.IbSat  = 1;
+            }
+            else
+            {
+                Ctrl.IbSat  = 0;
+            }
 
             /* 深放电恒流预充 */
             if (v_b < V_DIS_MIN && i_b_ref > I_PRE) { i_b_ref = I_PRE; }
@@ -189,6 +226,24 @@ void Ctrl_Step(float Ts)
             /* 换算到电感电流：I_B = D_B * I_L（用上一拍的 D_B） */
             Ctrl.I_L_Ref = i_b_ref / (Ctrl.D_B > DMIN ? Ctrl.D_B : DMIN);
             Ctrl.I_L_Ref = CLAMP(Ctrl.I_L_Ref, -I_L_MAX, I_L_MAX) * Ctrl.Soft;
+
+#if (CFG_CUR_STEP_TEST == 1)
+            /* A2 诊断模式：功率环被完全旁路，电流指令换成固定偏置 + 方波。
+               这时日志里的 I_L（CH4）对 I_L_Ref（CH6）就是电流环的真实阶跃响应。
+               P_Ref 会大幅偏离 P_Tgt，属于预期；过流/超压保护照常生效。 */
+            {
+                static float   t_acc;
+                static uint8_t hi;
+
+                t_acc += Ts;
+                if (t_acc >= (float)CUR_STEP_HALF_MS * 1e-3f)
+                {
+                    t_acc -= (float)CUR_STEP_HALF_MS * 1e-3f;
+                    hi ^= 1u;
+                }
+                Ctrl.I_L_Ref = CUR_STEP_BIAS + (hi ? CUR_STEP_AMP : -CUR_STEP_AMP);
+            }
+#endif
         }
     }
 
@@ -212,5 +267,17 @@ void Ctrl_Step(float Ts)
     }
 
     /* ---------- 6. 调制器 ---------- */
-    Modulator_Compute(Smp.V_A, Smp.V_B, Ctrl.u, &Ctrl.D_A, &Ctrl.D_B);
+    {
+        float u_ok = Ctrl.u;
+
+#if (CFG_DT_COMP == 1)
+        /* A3 死区补偿：死区让实际占空比少了约 DT_COMP，电压误差 ±DT_COMP*V_A
+           ≈ ±0.13 V。而电流环 P 路径在 |误差| < 3.4 A 时给出的 V_L 就低于这个值，
+           等于 P 项被死区吃掉。按电流方向补回，|I_L| 小于纹波半幅时线性过渡，
+           避免 0 A 附近因符号跳变而抖动。 */
+        u_ok += DT_COMP * CLAMP(Smp.I_L / DT_COMP_LIN, -1.0f, 1.0f);
+#endif
+
+        Modulator_Compute(Smp.V_A, Smp.V_B, u_ok, &Ctrl.D_A, &Ctrl.D_B);
+    }
 }
